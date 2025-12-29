@@ -110,6 +110,24 @@ if st.sidebar.button("🧹 全データを初期化", width='stretch'):
 
 # --- 4. メイン画面：解析 ---
 st.title("💴 【無料・登録不要・安全】クレジットカード明細を自動仕分けする「クレカ明細仕分けくん」｜確定申告を爆速に")
+# --- タイトル直下の説明・安全宣言セクション ---
+
+# 1. 安全性の宣言（セキュリティ）
+st.success("""
+🔒 **プライバシー保護について**
+当ツールは、アップロードされたCSVデータをサーバーへ保存・送信することは一切ありません。
+解析処理はすべてあなたのブラウザ上で行われ、学習したルールもあなたのPC内（LocalStorage）にのみ保存されます。
+""")
+
+# 2. 使い方の3ステップ（認知負荷の低減）
+with st.expander("📖 使い方（3ステップで完了）", expanded=False):
+    st.markdown("""
+    1. **ファイルの読み込み**: 1ヶ月分、または1年分のCSVファイルをまとめてドロップしてください。
+    2. **ルールの学習**: 画面左のサイドバーから、店名とカテゴリーを紐付ける「ルール」を登録します。
+    3. **レポートの保存**: すべての「未分類」が消えたら、一番下のボタンから監査用CSVを保存して終了です！
+    """)
+
+st.divider() # 区切り線でメイン機能と分ける
 
 uploaded_files = st.file_uploader("CSVファイルを選択", type="csv", accept_multiple_files=True)
 
@@ -182,6 +200,7 @@ if "df" in st.session_state:
 
     st.download_button("📥 結果を保存", create_report(st.session_state.df, st.session_state.categories).encode('utf_8_sig'), 
                        file_name=f"クレカ明細仕分け結果.csv", mime="text/csv", width='stretch')
+
 
 
 
