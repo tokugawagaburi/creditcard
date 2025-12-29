@@ -7,7 +7,6 @@ from streamlit_local_storage import LocalStorage
 
 # --- 1. 基本設定 ---
 ls = LocalStorage()
-# 常に「🔴 未分類」が先頭に来るようにします
 DEFAULT_CATEGORIES = ["🔴 未分類", "旅費・交通費", "燃料費", "福利厚生費", "通信費", "材料費", "消耗品", "会費", "書籍", "交際費", "修繕費", "その他"]
 
 st.set_page_config(page_title="クレカ明細☆仕分けくん", layout="wide", page_icon="💴")
@@ -84,7 +83,7 @@ with st.sidebar.expander("📝 学習したルールの編集・消去"):
                 st.session_state.df["カテゴリー"] = st.session_state.df["内容"].apply(lambda x: auto_classify(x, st.session_state.rules))
             st.rerun()
 
-# ③ カテゴリー自体の編集（ここを強化しました！）
+# ③ カテゴリー自体の編集
 with st.sidebar.expander("📁 カテゴリー名の追加・編集"):
     st.write("※「🔴 未分類」は削除できません")
     cat_text = st.text_area("一行に一つ入力", value="\n".join(st.session_state.categories))
@@ -176,4 +175,5 @@ if "df" in st.session_state:
 
     st.download_button("📥 結果を保存", create_report(st.session_state.df, st.session_state.categories).encode('utf_8_sig'), 
                        file_name=f"クレカ明細仕分け結果.csv", mime="text/csv", width='stretch')
+
 
