@@ -97,6 +97,13 @@ with st.sidebar.expander("📁 カテゴリー名の追加・編集"):
         st.success("カテゴリーを更新しました！")
         st.rerun()
 
+st.sidebar.divider()
+st.sidebar.subheader("🥤 開発者を応援する")
+st.sidebar.caption("「今年の確定申告が楽になった！」「応援したい」という方は、こちらからコーヒー一杯分のギフトをいただけると、研究と開発の励みになります！")
+
+ofuse_url = "https://ofuse.me/0cb597b9" 
+st.sidebar.markdown(f"[:link: **OFUSEで応援メッセージを送る**]({ofuse_url})")
+
 if st.sidebar.button("🧹 全データを初期化", width='stretch'):
     st.session_state.clear()
     st.rerun()
@@ -175,5 +182,6 @@ if "df" in st.session_state:
 
     st.download_button("📥 結果を保存", create_report(st.session_state.df, st.session_state.categories).encode('utf_8_sig'), 
                        file_name=f"クレカ明細仕分け結果.csv", mime="text/csv", width='stretch')
+
 
 
