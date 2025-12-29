@@ -10,7 +10,7 @@ ls = LocalStorage()
 # 常に「🔴 未分類」が先頭に来るようにします
 DEFAULT_CATEGORIES = ["🔴 未分類", "旅費・交通費", "燃料費", "福利厚生費", "通信費", "材料費", "消耗品", "会費", "書籍", "交際費", "修繕費", "その他"]
 
-st.set_page_config(page_title="経費精算くん Pro", layout="wide", page_icon="💴")
+st.set_page_config(page_title="クレカ明細☆仕分けくん", layout="wide", page_icon="💴")
 
 def load_browser_data(key, default):
     raw = ls.getItem(key)
@@ -103,7 +103,7 @@ if st.sidebar.button("🧹 全データを初期化", width='stretch'):
     st.rerun()
 
 # --- 4. メイン画面：解析 ---
-st.title("💴 経費精算くん Pro")
+st.title("💴 クレカ明細☆仕分けくん")
 
 uploaded_files = st.file_uploader("CSVファイルを選択", type="csv", accept_multiple_files=True)
 
@@ -169,10 +169,11 @@ if "df" in st.session_state:
     def create_report(df, categories):
         summ = df.groupby("カテゴリー")["金額"].sum().reset_index()
         summ = summ[summ["金額"] > 0]
-        rep = "【経費精算レポート】\n\n■ 集計表\nカテゴリー,金額\n"
+        rep = "【クレカ明細仕分け結果】\n\n■ 集計表\nカテゴリー,金額\n"
         for _, r in summ.iterrows(): rep += f"{r['カテゴリー']},{int(r['金額'])}\n"
         rep += f"総合計,{int(df['金額'].sum())}\n\n■ 明細一覧\n" + df.to_csv(index=False)
         return rep
 
-    st.download_button("📥 監査用レポートを保存", create_report(st.session_state.df, st.session_state.categories).encode('utf_8_sig'), 
-                       file_name=f"経費精算レポート.csv", mime="text/csv", width='stretch')
+    st.download_button("📥 結果を保存", create_report(st.session_state.df, st.session_state.categories).encode('utf_8_sig'), 
+                       file_name=f"クレカ明細仕分け結果.csv", mime="text/csv", width='stretch')
+
