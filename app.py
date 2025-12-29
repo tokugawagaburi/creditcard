@@ -122,8 +122,8 @@ st.success("""
 # 2. 使い方の3ステップ（認知負荷の低減）
 with st.expander("📖 使い方（3ステップで完了）", expanded=False):
     st.markdown("""
-    1. **ファイルの読み込み**: 1ヶ月分、または1年分のCSVファイルをまとめてドロップしてください。
-    2. **ルールの学習**: 画面左のサイドバーから、店名とカテゴリーを紐付ける「ルール」を登録します。
+    1. **ファイルの読み込み**: CSVファイルをドロップしてください。いくつでもok
+    2. **ルールの学習**: 画面左のサイドバーから、内容とカテゴリーを紐付ける「ルール」を登録します。
     3. **レポートの保存**: すべての「未分類」が消えたら、一番下のボタンからCSVを保存して終了です！
     """)
 
@@ -200,6 +200,7 @@ if "df" in st.session_state:
 
     st.download_button("📥 結果を保存", create_report(st.session_state.df, st.session_state.categories).encode('utf_8_sig'), 
                        file_name=f"クレカ明細仕分け結果.csv", mime="text/csv", width='stretch')
+
 
 
 
