@@ -1,25 +1,36 @@
 import streamlit as st
 import pandas as pd
-import os
+import json
 import re
+import unicodedata
+from streamlit_local_storage import LocalStorage
 
-# --- 1. 定義 ---
-CATEGORIES = ["未分類", "旅費・交通費", "燃料費", "福利厚生費", "通信費", "材料費", "消耗品", "会費", "書籍", "交際費", "修繕費", "その他"]
-RULES_FILE = "classification_rules.csv"
+# --- 1. 基本設定 ---
+ls = LocalStorage()
+# 常に「🔴 未分類」が先頭に来るようにします
+DEFAULT_CATEGORIES = ["🔴 未分類", "旅費・交通費", "燃料費", "福利厚生費", "通信費", "材料費", "消耗品", "会費", "書籍", "交際費", "修繕費", "その他"]
 
-# --- 関数群 ---
-def load_rules():
-    if os.path.exists(RULES_FILE): return pd.read_csv(RULES_FILE)
-    return pd.DataFrame(columns=["keyword", "category"])
+st.set_page_config(page_title="経費精算くん Pro", layout="wide", page_icon="💴")
 
-def save_rules_to_file(df):
-    df.to_csv(RULES_FILE, index=False, encoding="utf_8_sig")
+def load_browser_data(key, default):
+    raw = ls.getItem(key)
+    if raw:
+        try: return json.loads(raw)
+        except: return default
+    return default
 
-def auto_classify(name, rules_df):
-    name_str = str(name).upper()
-    for _, row in rules_df.iterrows():
-        if str(row["keyword"]).upper() in name_str: return row["category"]
-    return "未分類"
+def save_browser_data(key, data):
+    ls.setItem(key, json.dumps(data))
+
+# --- 2. 賢い仕分けロジック ---
+def auto_classify(name, rules):
+    if pd.isna(name): return "🔴 未分類"
+    name_norm = unicodedata.normalize('NFKC', str(name)).upper().strip()
+    for rule in rules:
+        rule_kw = unicodedata.normalize('NFKC', str(rule["keyword"])).upper().strip()
+        if rule_kw in name_norm:
+            return rule["category"]
+    return "🔴 未分類"
 
 def clean_to_int(value):
     if pd.isna(value) or value == "": return 0
@@ -28,141 +39,140 @@ def clean_to_int(value):
     try: return int(cleaned)
     except: return 0
 
-def highlight_unclassified_rows(row):
-    return ['background-color: #ffcccc' if row['カテゴリー'] == '未分類' else ''] * len(row)
+# セッション状態の初期化
+if "categories" not in st.session_state:
+    st.session_state.categories = load_browser_data("my_expense_categories", DEFAULT_CATEGORIES)
+if "rules" not in st.session_state:
+    st.session_state.rules = load_browser_data("my_expense_rules", [])
 
-# --- ★印刷用CSS（画面上では何も隠さず、印刷時のみ適用） ---
-st.markdown("""
-    <style>
-    @media print {
-        /* 印刷時に隠すもの：サイドバー、ボタン類、アップローダー、グラフ、注意書き */
-        [data-testid="stSidebar"], 
-        .stButton, 
-        [data-testid="stFileUploader"],
-        [data-testid="stArrowVegaLiteChart"],
-        .stAlert,
-        header,
-        footer {
-            display: none !important;
-        }
-        /* 明細編集テーブルも印刷時は隠す（小計表だけ残す） */
-        [data-testid="stDataEditor"] {
-            display: none !important;
-        }
-        /* 印刷の余白調整 */
-        .main .block-container {
-            padding: 0 !important;
-        }
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# --- 3. サイドバー：学習・設定 ---
+st.sidebar.title("⚙️ 設定・学習")
 
-st.set_page_config(page_title="経費精算くん", layout="wide", page_icon="💴")
-st.title("💴 経費仕分け・集計システム")
-
-# --- 2. サイドバー：ルール管理（復活） ---
-st.sidebar.header("⚙️ 設定と学習")
-current_rules = load_rules()
-
-with st.sidebar.expander("➕ 新しいルールを追加"):
-    with st.form("add_rule_form", clear_on_submit=True):
-        kw = st.text_input("店名のキーワード")
-        cat = st.selectbox("勘定科目", CATEGORIES)
-        if st.form_submit_button("マスタに登録"):
+# ① 新しいルールを教える
+with st.sidebar.expander("🎓 新しいルールを教える", expanded=True):
+    with st.form("rule_form"):
+        kw = st.text_input("キーワード (例: ETC)")
+        # 未分類以外から選択させる
+        usable_cats = [c for c in st.session_state.categories if "未分類" not in c]
+        cat = st.selectbox("分類するカテゴリー", usable_cats)
+        if st.form_submit_button("このルールを学習する"):
             if kw:
-                rules = load_rules()
-                rules = pd.concat([rules[rules["keyword"] != kw], pd.DataFrame({"keyword": [kw], "category": [cat]})], ignore_index=True)
-                save_rules_to_file(rules)
-                st.sidebar.success(f"「{kw}」を登録")
+                new_rules = [r for r in st.session_state.rules if r["keyword"] != kw]
+                new_rules.append({"keyword": kw, "category": cat})
+                st.session_state.rules = new_rules
+                save_browser_data("my_expense_rules", new_rules)
+                if "df" in st.session_state:
+                    st.session_state.df["カテゴリー"] = st.session_state.df["内容"].apply(lambda x: auto_classify(x, st.session_state.rules))
+                st.success(f"「{kw}」を学習しました！")
+                st.rerun()
 
-st.sidebar.divider()
-if st.sidebar.button("🎯 ルールを未分類に一括適用", type="primary", use_container_width=True):
-    if "df" in st.session_state:
-        rules = load_rules()
-        mask = st.session_state.df["カテゴリー"] == "未分類"
-        st.session_state.df.loc[mask, "カテゴリー"] = st.session_state.df.loc[mask, st.session_state.name_col].apply(lambda x: auto_classify(x, rules))
+# ② 学習したルールの管理
+with st.sidebar.expander("📝 学習したルールの編集・消去"):
+    if st.session_state.rules:
+        edited_rules = st.data_editor(
+            st.session_state.rules, 
+            num_rows="dynamic", 
+            hide_index=True,
+            column_config={
+                "category": st.column_config.SelectboxColumn("カテゴリー", options=st.session_state.categories)
+            }
+        )
+        if st.sidebar.button("ルールの変更を保存", width='stretch'):
+            st.session_state.rules = edited_rules
+            save_browser_data("my_expense_rules", edited_rules)
+            if "df" in st.session_state:
+                st.session_state.df["カテゴリー"] = st.session_state.df["内容"].apply(lambda x: auto_classify(x, st.session_state.rules))
+            st.rerun()
+
+# ③ カテゴリー自体の編集（ここを強化しました！）
+with st.sidebar.expander("📁 カテゴリー名の追加・編集"):
+    st.write("※「🔴 未分類」は削除できません")
+    cat_text = st.text_area("一行に一つ入力", value="\n".join(st.session_state.categories))
+    if st.sidebar.button("カテゴリー一覧を更新", width='stretch'):
+        new_cats = [c.strip() for c in cat_text.split("\n") if c.strip()]
+        if "🔴 未分類" not in new_cats:
+            new_cats.insert(0, "🔴 未分類") # 未分類を強制的に先頭へ
+        
+        st.session_state.categories = new_cats
+        save_browser_data("my_expense_categories", new_cats)
+        st.success("カテゴリーを更新しました！")
         st.rerun()
 
-if not current_rules.empty:
-    st.sidebar.subheader("📋 登録済みリスト")
-    edited_rules = st.sidebar.data_editor(current_rules, num_rows="dynamic", hide_index=True, key="rules_editor")
-    if st.sidebar.button("マスタの変更を保存"):
-        save_rules_to_file(edited_rules)
-        st.sidebar.info("保存完了。反映は一括適用ボタンで。")
+if st.sidebar.button("🧹 全データを初期化", width='stretch'):
+    st.session_state.clear()
+    st.rerun()
 
-# --- 3. メイン処理：CSV読み込み ---
-uploaded_file = st.file_uploader("CSVをアップロードしてください", type="csv")
+# --- 4. メイン画面：解析 ---
+st.title("💴 経費精算くん Pro")
 
-if uploaded_file:
-    if "df" not in st.session_state or st.session_state.get("file_name") != uploaded_file.name:
-        for enc in ['cp932', 'shift_jis', 'utf-8']:
-            try:
-                uploaded_file.seek(0)
-                df_raw = pd.read_csv(uploaded_file, encoding=enc)
-                break
-            except: continue
-        
-        if df_raw is not None:
-            n_col, a_col = df_raw.columns[0], df_raw.columns[min(1, len(df_raw.columns)-1)]
-            for c in df_raw.columns:
-                if any(k in c for k in ["店名", "内容", "摘要"]): n_col = c
-                if "金額" in c: a_col = c
-            
-            st.session_state.file_name = uploaded_file.name
-            st.session_state.name_col = n_col
-            df_raw["金額"] = df_raw[a_col].apply(clean_to_int)
-            df_raw["カテゴリー"] = df_raw[n_col].apply(lambda x: auto_classify(x, load_rules()))
-            other_cols = [c for c in df_raw.columns if c not in ["カテゴリー", "金額"]]
-            st.session_state.df = df_raw[["カテゴリー", "金額"] + other_cols]
+uploaded_files = st.file_uploader("CSVファイルを選択", type="csv", accept_multiple_files=True)
 
-# データの表示・編集
+if uploaded_files:
+    if st.session_state.get("file_ids") != [f.name for f in uploaded_files]:
+        st.session_state.file_ids = [f.name for f in uploaded_files]
+        all_dfs = []
+        for f in uploaded_files:
+            for enc in ['cp932', 'shift_jis', 'utf-8']:
+                try:
+                    f.seek(0)
+                    df_tmp = pd.read_csv(f, encoding=enc)
+                    df_tmp["元ファイル"] = f.name
+                    all_dfs.append(df_tmp)
+                    break
+                except: continue
+        if all_dfs:
+            st.session_state.raw_df = pd.concat(all_dfs, ignore_index=True)
+
+    if "raw_df" in st.session_state and "df" not in st.session_state:
+        col_a, col_b = st.columns(2)
+        name_col = col_a.selectbox("店名・内容の列", st.session_state.raw_df.columns)
+        price_col = col_b.selectbox("金額の列", st.session_state.raw_df.columns)
+        if st.button("🚀 解析を開始する", type="primary", width='stretch'):
+            df = st.session_state.raw_df.copy()
+            df["内容"] = df[name_col]
+            df["金額"] = df[price_col].apply(clean_to_int)
+            df["カテゴリー"] = df["内容"].apply(lambda x: auto_classify(x, st.session_state.rules))
+            main_cols = ["カテゴリー", "内容", "金額", "元ファイル"]
+            st.session_state.df = df[main_cols + [c for c in df.columns if c not in main_cols]]
+            st.rerun()
+
+# --- 5. 編集・集計 ---
 if "df" in st.session_state:
-    # メインの合計金額（赤色表示を維持）
-    total_val = st.session_state.df["金額"].sum()
-    st.markdown(f"## 現在の合計: <span style='color:#ff4b4b; font-size:40px;'>¥{int(total_val):,}</span>", unsafe_allow_html=True)
+    st.divider()
+    unclassified_df = st.session_state.df[st.session_state.df["カテゴリー"].str.contains("未分類", na=False)]
+    if not unclassified_df.empty:
+        st.warning(f"⚠️ まだ {len(unclassified_df)} 件（¥{int(unclassified_df['金額'].sum()):,}）の未分類があります。")
 
-    st.subheader("📝 明細編集")
-    updated_data = st.data_editor(
-        st.session_state.df.style.apply(highlight_unclassified_rows, axis=1), 
+    updated_df = st.data_editor(
+        st.session_state.df.style.apply(lambda r: ['background-color: #FFD1D1' if "未分類" in str(r.カテゴリー) else ''] * len(r), axis=1),
         column_config={
-            "カテゴリー": st.column_config.SelectboxColumn("勘定科目", options=CATEGORIES, required=True),
-            "金額": st.column_config.NumberColumn("金額", format="¥%d")
+            "カテゴリー": st.column_config.SelectboxColumn("📁 勘定科目", options=st.session_state.categories, required=True),
+            "内容": st.column_config.TextColumn("🏷️ 内容", disabled=True),
+            "金額": st.column_config.NumberColumn("💰 金額", format="¥%d", disabled=True)
         },
-        disabled=[c for c in st.session_state.df.columns if c != "カテゴリー"],
-        hide_index=True, use_container_width=True, key="main_editor"
+        width='stretch', hide_index=True, key="main_editor"
     )
     
-    if st.button("✅ 編集内容を確定して集計を更新", type="primary", use_container_width=True):
-        st.session_state.df = pd.DataFrame(updated_data)
+    if st.button("✅ 編集を保存", type="primary", width='stretch'):
+        st.session_state.df = updated_df
         st.rerun()
 
-    # --- 4. 集計・報告セクション ---
-    st.divider()
-    st.header("📊 経費集計サマリー")
-    
-    summary = st.session_state.df.groupby("カテゴリー")["金額"].sum().reindex(CATEGORIES).fillna(0).reset_index()
-    summary_display = summary[summary["金額"] != 0].copy()
+    # 集計とダウンロード
+    summary = st.session_state.df.groupby("カテゴリー")["金額"].sum().reset_index()
+    summary_display = summary[summary["金額"] > 0]
+    if not summary_display.empty:
+        st.subheader("📊 科目別集計")
+        col_l, col_r = st.columns([1, 1])
+        col_l.dataframe(summary_display, hide_index=True, width='stretch')
+        col_r.bar_chart(summary_display.set_index("カテゴリー")["金額"])
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if not summary_display.empty:
-            # 整数化・カンマ区切り
-            summary_display["金額（円）"] = summary_display["金額"].apply(lambda x: f"¥{int(x):,}")
-            st.dataframe(
-                summary_display[["カテゴリー", "金額（円）"]].style.apply(highlight_unclassified_rows, axis=1),
-                hide_index=True, use_container_width=True
-            )
-        
-        # 未分類警告
-        un_val = summary.loc[summary["カテゴリー"] == "未分類", "金額"].sum()
-        if un_val > 0:
-            st.warning(f"⚠️ 未分類残額: ¥{int(un_val):,}")
-        else:
-            st.success("✅ 全項目仕分け済み")
+    def create_report(df, categories):
+        summ = df.groupby("カテゴリー")["金額"].sum().reset_index()
+        summ = summ[summ["金額"] > 0]
+        rep = "【経費精算レポート】\n\n■ 集計表\nカテゴリー,金額\n"
+        for _, r in summ.iterrows(): rep += f"{r['カテゴリー']},{int(r['金額'])}\n"
+        rep += f"総合計,{int(df['金額'].sum())}\n\n■ 明細一覧\n" + df.to_csv(index=False)
+        return rep
 
-    with col2:
-        if not summary_display.empty:
-            st.bar_chart(summary_display.set_index("カテゴリー")["金額"])
-
-    st.info("💡 印刷したい時は Ctrl+P を押してください。サマリー表と合計金額のみが抽出されます。")
-    st.download_button("✅ CSVを保存", st.session_state.df.to_csv(index=False).encode('utf_8_sig'), f"result_{st.session_state.file_name}")
+    st.download_button("📥 監査用レポートを保存", create_report(st.session_state.df, st.session_state.categories).encode('utf_8_sig'), 
+                       file_name=f"経費精算レポート.csv", mime="text/csv", width='stretch')
