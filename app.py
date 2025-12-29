@@ -9,7 +9,7 @@ from streamlit_local_storage import LocalStorage
 ls = LocalStorage()
 DEFAULT_CATEGORIES = ["🔴 未分類", "旅費・交通費", "燃料費", "福利厚生費", "通信費", "材料費", "消耗品", "会費", "書籍", "交際費", "修繕費", "その他"]
 
-st.set_page_config(page_title="【無料・登録不要・安全】クレジットカード明細を自動仕分けする「クレカ明細仕分けくん」｜確定申告を爆速に", layout="wide", page_icon="💴")
+st.set_page_config(page_title="【無料・登録不要・安全】 \n クレジットカード明細を自動仕分けする「クレカ明細仕分けくん」｜確定申告を爆速に", layout="wide", page_icon="💴")
 
 def load_browser_data(key, default):
     raw = ls.getItem(key)
@@ -182,6 +182,7 @@ if "df" in st.session_state:
 
     st.download_button("📥 結果を保存", create_report(st.session_state.df, st.session_state.categories).encode('utf_8_sig'), 
                        file_name=f"クレカ明細仕分け結果.csv", mime="text/csv", width='stretch')
+
 
 
 
